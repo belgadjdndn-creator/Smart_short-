@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show buildozer.spec (verify no warnings)
+      - name: Show buildozer.spec (confirm no deprecated tokens)
         run: |
           echo "===== buildozer.spec content ====="
           cat buildozer.spec
@@ -36,40 +36,16 @@ jobs:
           echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
           echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
-      - name: Install Android SDK (non‑interactive, fully licensed)
+      - name: Prepare Android SDK (license only – let Buildozer fetch the rest)
         run: |
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-
-          # Save for future steps
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-          # Download cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-*.zip -d android-sdk-tmp
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          mv android-sdk-tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-
-          # Create license directory and accept all licenses manually
+          # Create the license file manually – this completely removes the prompt
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo -e "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
+          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-
-          # Now install required packages (using --sdk_root)
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-            --sdk_root=$ANDROID_SDK_ROOT \
-            "build-tools;33.0.2" \
-            "platforms;android-33" \
-            "platform-tools"
-
-      - name: Debug – show installed SDK contents
-        run: |
-          echo "=== SDK directory structure ==="
-          ls -R $ANDROID_SDK_ROOT || true
-          echo "=== Checking aidl ==="
-          ls -la $ANDROID_SDK_ROOT/build-tools/33.0.2/aidl
 
       - name: Install Buildozer
         run: |
@@ -78,4 +54,5 @@ jobs:
 
       - name: Build APK
         run: |
+          # `yes` is a final safety net; with the license file it won’t even be needed
           yes | buildozer android debug 2>&1 | cat
