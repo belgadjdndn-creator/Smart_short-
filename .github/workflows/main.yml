@@ -27,9 +27,8 @@ jobs:
 
       - name: Set Java environment
         run: |
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
-          echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
       - name: Setup Android SDK (non‑interactive license accept)
         run: |
@@ -37,20 +36,27 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-*.zip -d android-sdk
 
-          # Create proper directory layout
+          # Create the correct directory layout
           mkdir -p $HOME/android-sdk/cmdline-tools
           mv android-sdk/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
+          # Export SDK root for current and subsequent steps
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
 
-          # Accept ALL licenses automatically
+          # Accept all licenses
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
 
-          # Install exactly what we need (including aidl)
+          # Install the exact build-tools and platform we need (match spec)
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "build-tools;33.0.2" \
             "platforms;android-33"
+
+      - name: Verify SDK installation (aidl must exist)
+        run: |
+          ls -la $ANDROID_SDK_ROOT/build-tools/33.0.2/aidl && echo "aidl found" || exit 1
 
       - name: Install Buildozer and build dependencies
         run: |
