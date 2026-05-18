@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show buildozer.spec (verify it's correct)
+      - name: Show buildozer.spec (verify no warnings)
         run: |
           echo "===== buildozer.spec content ====="
           cat buildozer.spec
@@ -36,45 +36,46 @@ jobs:
           echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
           echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
-      - name: Setup Android SDK & force license acceptance
+      - name: Install Android SDK (non‑interactive, fully licensed)
         run: |
-          # Download cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-*.zip -d android-sdk
-
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          mv android-sdk/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
-
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$ANDROID_SDK_ROOT
+
+          # Save for future steps
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
 
-          # Accept licenses programmatically
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+          # Download cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip -d android-sdk-tmp
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          mv android-sdk-tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
 
-          # Manually create the license file Buildozer looks for
-          # (redundant but guarantees no prompts)
+          # Create license directory and accept all licenses manually
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
+          echo -e "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
 
-          # Install exact tools we need
+          # Now install required packages (using --sdk_root)
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$ANDROID_SDK_ROOT \
             "build-tools;33.0.2" \
-            "platforms;android-33"
+            "platforms;android-33" \
+            "platform-tools"
 
-      - name: Verify aidl is present
+      - name: Debug – show installed SDK contents
         run: |
-          ls -la $ANDROID_SDK_ROOT/build-tools/33.0.2/aidl && echo "aidl OK"
+          echo "=== SDK directory structure ==="
+          ls -R $ANDROID_SDK_ROOT || true
+          echo "=== Checking aidl ==="
+          ls -la $ANDROID_SDK_ROOT/build-tools/33.0.2/aidl
 
       - name: Install Buildozer
         run: |
           pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Build APK (with safe auto-accept fallback)
+      - name: Build APK
         run: |
-          # The `yes` pipe will answer any leftover license prompts.
-          # Redirecting through `cat` avoids SIGPIPE issues.
           yes | buildozer android debug 2>&1 | cat
