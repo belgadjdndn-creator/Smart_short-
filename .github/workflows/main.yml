@@ -32,10 +32,10 @@ jobs:
 
       - name: Force-correct buildozer.spec (remove deprecated tokens & fix Python)
         run: |
-          # Remove any deprecated "android.arch" (but not "android.archs")
+          # Remove deprecated android.arch (but keep android.archs)
           sed -i '/^android\.arch[^s]/d' buildozer.spec
 
-          # Remove deprecated "android.sdk" token if present
+          # Remove deprecated android.sdk token (the line "android.sdk = ...")
           sed -i '/^android\.sdk\s*=/d' buildozer.spec
 
           # Ensure android.archs is present
@@ -56,18 +56,43 @@ jobs:
             echo "android.python_version = 3.8" >> buildozer.spec
           fi
 
+          # Ensure custom SDK path is set (so Buildozer uses our pre‑installed SDK)
+          if ! grep -q '^android\.sdk_path\s*=' buildozer.spec; then
+            echo "android.sdk_path = /home/runner/android-sdk" >> buildozer.spec
+          fi
+
           echo "=== Sanitised buildozer.spec ==="
           cat buildozer.spec
 
-      - name: Prepare Android SDK license (fully non‑interactive)
+      - name: Setup Android SDK and accept all licenses (non‑interactive)
         run: |
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          # The exact license hash accepted by all recent Android SDK tools
+
+          # Write the licence file – this + sdkmanager --licenses = 0 prompts
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+
+          # Download cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip -d cmdline-tools-tmp
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          mv cmdline-tools-tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+
+          # Accept absolutely every license
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$ANDROID_SDK_ROOT --licenses
+
+          # Pre‑install the packages we know we need (optional, but speeds up build)
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$ANDROID_SDK_ROOT \
+            "build-tools;33.0.2" "platforms;android-33" "platform-tools"
+
+          # Force Buildozer to use this SDK by setting the relevant env vars
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
       - name: Install Buildozer
         run: |
