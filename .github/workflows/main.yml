@@ -1,6 +1,8 @@
 name: Build Android APK
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -8,30 +10,47 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: Install System Dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git python3 python3-pip \
+            openjdk-11-jdk libltdl-dev autoconf automake \
+            libtool libffi-dev zlib1g-dev libssl-dev
 
-    - name: Install Buildozer
-      run: |
-        pip install --upgrade pip
-        pip install buildozer Cython==0.29.33 virtualenv
+      - name: Setup Android SDK (non‑interactive license accept)
+        run: |
+          # Download command-line tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip -d android-sdk
 
-    - name: Build with Buildozer
-      run: |
-        buildozer android debug
+          # Create proper directory layout
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          mv android-sdk/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: smart-shorts-apk
-        path: bin/*.apk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+
+          # Accept ALL licenses automatically
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
+
+          # Install exactly what we need (including aidl)
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "build-tools;33.0.2" \
+            "platforms;android-33"
+
+      - name: Install Buildozer and build dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+
+      - name: Build APK with Buildozer
+        run: |
+          buildozer android debug
