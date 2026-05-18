@@ -30,81 +30,88 @@ jobs:
           echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
           echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
 
-      - name: Force-correct buildozer.spec (clean deprecated tokens, fix Python, block SDK auto-download)
+      - name: Generate a clean buildozer.spec (ignore repo spec)
         run: |
-          # 1. Remove deprecated android.arch (but keep android.archs)
-          sed -i '/^android\.arch[^s]/d' buildozer.spec
+          cat > buildozer.spec << 'SPECEOF'
+          [app]
+          title = Smart Shorts
+          package.name = smartshorts
+          package.domain = org.example
+          source.dir = .
+          source.include_exts = py,png,jpg,kv,atlas
+          version = 0.1
+          requirements = python3,kivy==2.2.1,requests,certifi,urllib3,android,yt_dlp,websockets,mutagen,pycryptodomex
+          orientation = portrait
+          fullscreen = 1
 
-          # 2. Remove deprecated android.sdk = ... line
-          sed -i '/^android\.sdk\s*=/d' buildozer.spec
+          android.sdk_path = /home/runner/android-sdk
+          android.accept_sdk_license = True
+          android.sdk_update = False
 
-          # 3. Ensure android.archs exists
-          if ! grep -q '^android\.archs\s*=' buildozer.spec; then
-            echo "android.archs = armeabi-v7a, arm64-v8a" >> buildozer.spec
-          fi
+          android.api = 33
+          android.minapi = 21
+          android.build_tools_version = 33.0.2
 
-          # 4. Ensure license acceptance
-          if ! grep -q '^android\.accept_sdk_license\s*=' buildozer.spec; then
-            echo "android.accept_sdk_license = True" >> buildozer.spec
-          fi
+          android.archs = armeabi-v7a, arm64-v8a
+          android.ndk_version = 25b
+          android.javac_source = 17
+          android.javac_target = 17
+          android.python_version = 3.8
 
-          # 5. Replace python3==X.X.X with python3 (exact pinning not supported)
-          sed -i '/^requirements\s*=/ s/python3==[0-9.]*/python3/' buildozer.spec
+          android.keystore = debug.keystore
+          android.gradle_dependencies = 
+          android.add_src = 
+          log_level = 2
 
-          # 6. Force Python 3.8
-          if ! grep -q '^android\.python_version\s*=' buildozer.spec; then
-            echo "android.python_version = 3.8" >> buildozer.spec
-          fi
-
-          # 7. Ensure custom SDK path is set
-          if ! grep -q '^android\.sdk_path\s*=' buildozer.spec; then
-            echo "android.sdk_path = /home/runner/android-sdk" >> buildozer.spec
-          fi
-
-          # 8. CRITICAL: Prevent Buildozer from downloading its own SDK
-          if ! grep -q '^android\.sdk_update\s*=' buildozer.spec; then
-            echo "android.sdk_update = False" >> buildozer.spec
-          fi
-
-          echo "=== Sanitised buildozer.spec ==="
+          [buildozer]
+          SPECEOF
+          echo "=== Fresh buildozer.spec ==="
           cat buildozer.spec
 
-      - name: Setup Android SDK (fully licensed + legacy symlink for Buildozer)
+      - name: Setup Android SDK & accept all licenses (for both custom and internal paths)
         run: |
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           mkdir -p $ANDROID_SDK_ROOT/licenses
 
-          # Write the licence file – guarantees 0 prompts
+          # License hash
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
 
-          # Download cmdline-tools
+          # ---- Install cmdline-tools into custom SDK ----
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q commandlinetools-linux-*.zip -d cmdline-tools-tmp
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
           mv cmdline-tools-tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
 
-          # Accept every license with yes
+          # Accept all licenses
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             --sdk_root=$ANDROID_SDK_ROOT --licenses
 
-          # Pre‑install the exact build tools we need
+          # Pre-install both build-tools 33.0.2 (our spec) AND 37.0.0 (what Buildozer sometimes requests)
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             --sdk_root=$ANDROID_SDK_ROOT \
-            "build-tools;33.0.2" "platforms;android-33" "platform-tools"
+            "build-tools;33.0.2" \
+            "build-tools;37.0.0" \
+            "platforms;android-33" \
+            "platform-tools"
 
-          # *** CRITICAL FIX ***
-          # Buildozer expects a legacy "tools" directory; symlink it to cmdline-tools
+          # Symlink tools -> cmdline-tools/latest so Buildozer sees a legacy SDK layout
           ln -s $ANDROID_SDK_ROOT/cmdline-tools/latest $ANDROID_SDK_ROOT/tools
 
-          # Export variables so Buildozer finds our SDK
+          # ---- Also place the license file where Buildozer might look internally ----
+          BUILD_DEFAULT_SDK=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $BUILD_DEFAULT_SDK/licenses
+          cp $ANDROID_SDK_ROOT/licenses/android-sdk-license $BUILD_DEFAULT_SDK/licenses/
+
+          # Set env vars
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-          # Verify aidl is truly present
+          # Verify
           ls -la $ANDROID_SDK_ROOT/build-tools/33.0.2/aidl
+          ls -la $ANDROID_SDK_ROOT/build-tools/37.0.0/aidl
 
       - name: Install Buildozer
         run: |
